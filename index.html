@@ -17,7 +17,7 @@ body {
   background: radial-gradient(circle at center, #111622 0%, #050508 100%);
   color: var(--text); min-height: 100vh; padding: 16px; font-size: 14px;
   overflow-x: hidden;
-  -webkit-tap-highlight-color: transparent; /* Retire le flash bleu au clic sur mobile */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Toolbar */
@@ -255,13 +255,9 @@ function newGame(mode) {
     statueOrder = ['circle', 'triangle', 'square'];
   }
 
-  state = { mode: mode, rooms: {}, log: [], allInitialForms: [], hasWon: false };
+  state = { mode: mode, rooms: {}, log: [], hasWon: false };
   for (const r of FORMS) {
-    const wallForms = config[r].map(t => {
-      const f = makeForm(t, r);
-      state.allInitialForms.push(f);
-      return f;
-    });
+    const wallForms = config[r].map(t => makeForm(t, r));
     
     state.rooms[r] = {
       wall: wallForms,
@@ -297,6 +293,14 @@ function generateConfig(mode) {
     for (const f of FORMS) c[f] = [f, f];
   }
   return c;
+}
+
+function getAllForms() {
+  let forms = [];
+  for (const r of FORMS) {
+    forms = forms.concat(state.rooms[r].wall, state.rooms[r].inventory);
+  }
+  return forms;
 }
 
 function render() {
@@ -383,7 +387,6 @@ function selectForm(id, room, loc) {
 function handleStatueClick(targetRoom) {
   if (!selectedForm) return; // Si aucune forme sélectionnée, on ignore
 
-  // On simule un envoi en utilisant les données de la forme sélectionnée
   dragInfo = {
     formId: selectedForm.id,
     sourceRoom: selectedForm.sourceRoom,
@@ -404,15 +407,29 @@ function setActiveRoom(r) {
   }
 }
 
+/* 
+  RÈGLE STRICTE DE VALIDATION MISE À JOUR :
+  On utilise getAllForms() pour vérifier l'état actuel des formes.
+  Cela empêche le bug de triche avec le bouton "Annuler".
+*/
 function isSolved(room, roomName) {
+  // 1. Le mur doit être totalement vide
   if (room.wall.length > 0) return false;
+  
+  // 2. Doit avoir exactement 2 formes dans l'inventaire
   if (room.inventory.length !== 2) return false;
   
+  // 3. Les formes doivent être les bonnes (les 2 autres)
   const required = FORMS.filter(f => f !== roomName).sort();
   const types = room.inventory.map(f => f.type).sort();
   if (JSON.stringify(types) !== JSON.stringify(required)) return false;
 
-  const roomInitials = state.allInitialForms.filter(f => f.originRoom === roomName);
+  // 4. Toutes les formes initiales de cette salle doivent avoir quitté la salle au moins une fois
+  const allForms = getAllForms();
+  const roomInitials = allForms.filter(f => f.originRoom === roomName && f.isInitial);
+  
+  if (roomInitials.length !== 2) return false; // Sécurité
+  
   return roomInitials.every(f => f.hasLeft);
 }
 
@@ -452,7 +469,7 @@ const roomsEl = document.getElementById('rooms');
 roomsEl.addEventListener('dragstart', e => {
   const form = e.target.closest('.form[draggable="true"]');
   if (!form) return;
-  selectedForm = null; // Annule la sélection tactile si on commence un drag souris
+  selectedForm = null;
   dragInfo = {
     formId: parseInt(form.dataset.formId),
     sourceRoom: form.dataset.room,
